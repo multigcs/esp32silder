@@ -75,7 +75,7 @@ int sdelay = 2000;
 int start_pos = 0;
 int end_pos= X_MAX;
 int dorun = 0;
-int dozero = 1;
+int dozero = 0;
 int part = 0;
 int encoder_click = 0;
 
@@ -362,7 +362,9 @@ void menuTask( void * parameter ) {
 		}
 		int *value = (int *)menu[mn].value;
 		sprintf(tmp_str, "%i;%i;%i;%s;%i\n", mn, MENU_N, menu[mn].type, menu[mn].text, (int)*value);
+#ifdef SerialBT
 		SerialBT.print(tmp_str);
+#endif
 		mn++;
 		if (mn >= MENU_N) {
 			mn = 0;
@@ -377,11 +379,13 @@ void setup() {
 	// serial & bluetooth
 	Serial.begin(SERIAL_SPEED);
 	Serial.println("mXm-Slider");
+#ifdef SerialBT
 	SerialBT.begin("mXm-Slider");
+#endif
 
 
 	// display
-#ifdef DISP_RST_PIN___
+#ifdef DISP_RST_PIN
 	pinMode(DISP_RST_PIN, OUTPUT);
 	digitalWrite(DISP_RST_PIN, LOW);
 	delay(100);
@@ -396,6 +400,7 @@ void setup() {
 	display.drawString(0, 0, "mXm-Slider");
 	display.display();
 	display.setFont(ArialMT_Plain_16);
+
 
 	// pins
 	pinMode(SHUTTER_PIN, OUTPUT);
@@ -435,6 +440,7 @@ void setup() {
 		1,                        /* priority of the task */
 		&xTask1,                /* Task handle to keep track of created task */
 	1);                    /* pin task to core 0 */
+
 	xTaskCreatePinnedToCore(
 		stepperTask,           /* Task function. */
 		"stepperTask",        /* name of task. */
@@ -449,6 +455,7 @@ void setup() {
 	timerAttachInterrupt(timer, &onTimer, true);
 	timerAlarmWrite(timer, 1000, true);
 	timerAlarmEnable(timer);
+
 }
 
 
@@ -544,6 +551,7 @@ void stepperTask( void * parameter ) {
 void loop() {
 	batt = ((analogRead(BATT_PIN) * 33 * 3.3 / 4096) + batt) / 2;
 	// user-interface
+#ifdef SerialBT
 	char c = 0;
 	if (SerialBT.available()) {
 		c = SerialBT.read();
@@ -561,6 +569,7 @@ void loop() {
 			}
 		}
 	}
+#endif
 	draw_menu();
 }
 
