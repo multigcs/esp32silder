@@ -3,44 +3,60 @@
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
 #include <RotaryEncoder.h>
-#include "BluetoothSerial.h"
-#include "SSD1306Wire.h"
+#include <BluetoothSerial.h>
+#include <SSD1306Wire.h>
+
+
+#define SERIAL_SPEED 115200
 
 #define X_MAX 4000
 
-#define PIN_DIR_X 23
-#define PIN_STEP_X 16
-#define PIN_MS1_X 19
-#define PIN_MS2_X 34
-#define PIN_EN_X 18
+#define X_STEP_PIN 16
+#define X_DIR_PIN 23
+#define X_MS1_PIN 19
+#define X_MS2_PIN 34
+#define X_EN_PIN 18
 
-#define PIN_DIR_Y 35
-#define PIN_STEP_Y 32
-#define PIN_SW_X 17
-#define PIN_SW_Y 5
+#define Y_STEP_PIN 32
+#define Y_DIR_PIN 35
+#define X_SW_PIN 17
+#define Y_SW_PIN 5
 
-#define PIN_SERVO_Z 33
-#define PIN_SERVO_F 15
+//#define Z_SERVO_PIN 33
+//#define F_SERVO_PIN 15
 
-#define PIN_SHUTTER 2
+#define DISP_ADDR 0x3C
+#define DISP_RST_PIN 16
+#define I2C_SDA_PIN 4
+#define I2C_SCL_PIN 15
 
-#define PIN_BATT A0
+#define SHUTTER_PIN 2
 
-#define PIN_ENC_A 26
-#define PIN_ENC_B 25
-#define PIN_ENC_SW 27
+#define BATT_PIN A0
+
+#define ENC_A_PIN 26
+#define ENC_B_PIN 25
+#define ENC_SW_PIN 27
 
 hw_timer_t * timer = NULL;
 TaskHandle_t xTask1;
 TaskHandle_t xTask2;
 
-RotaryEncoder encoder(PIN_ENC_A, PIN_ENC_B);
-AccelStepper stepperX(1, PIN_STEP_X, PIN_DIR_X);
-AccelStepper stepperY(1, PIN_STEP_Y, PIN_DIR_Y);
+RotaryEncoder encoder(ENC_A_PIN, ENC_B_PIN);
+#ifdef X_STEP_PIN
+AccelStepper stepperX(1, X_STEP_PIN, X_DIR_PIN);
+#endif
+#ifdef Y_STEP_PIN
+AccelStepper stepperY(1, Y_STEP_PIN, Y_DIR_PIN);
+#endif
+#ifdef Z_SERVO_PIN
 Servo servoZ;
+#endif
+#ifdef F_SERVO_PIN
 Servo servoF;
+#endif
 BluetoothSerial SerialBT;
-SSD1306Wire display(0x3c, 21, 22);
+SSD1306Wire display(DISP_ADDR, I2C_SDA_PIN, I2C_SCL_PIN);
 
 int set_posX = 0;
 int set_speedX = 3000;
@@ -132,7 +148,7 @@ void draw_menu() {
 			menu[menu_n].last = *value;
 		}
 	}
-	if (digitalRead(PIN_ENC_SW) == 0) {
+	if (digitalRead(ENC_SW_PIN) == 0) {
 		encoder_click = 1;
 	}
 	if (encoder_click == 1) {
@@ -217,10 +233,16 @@ void draw_menu() {
 	}
 	stepperX.setMaxSpeed(set_speedX);
 	stepperX.setAcceleration(set_accelX);
+#ifdef Y_STEP_PIN
 	stepperY.setMaxSpeed(set_speedY);
 	stepperY.setAcceleration(set_accelY);
+#endif
+#ifdef Z_SERVO_PIN
 	servoZ.write(set_posZ);
+#endif
+#ifdef F_SERVO_PIN
 	servoF.write(set_posF);
+#endif
 	display.display();
 }
 
@@ -229,39 +251,39 @@ void gotozeroX() {
 	part = 0;
 	dorun = 0;
 	// force move out of sw
-	digitalWrite(PIN_DIR_X, HIGH);
-	while (digitalRead(PIN_SW_X) == 0) {
-		digitalWrite(PIN_EN_X, LOW);
-		digitalWrite(PIN_STEP_X, HIGH);
-		digitalWrite(PIN_STEP_X, LOW);
+	digitalWrite(X_DIR_PIN, HIGH);
+	while (digitalRead(X_SW_PIN) == 0) {
+		digitalWrite(X_EN_PIN, LOW);
+		digitalWrite(X_STEP_PIN, HIGH);
+		digitalWrite(X_STEP_PIN, LOW);
 		delayMicroseconds(4000);
 	}
 	// move to sw
-	digitalWrite(PIN_DIR_X, LOW);
-	while (digitalRead(PIN_SW_X) == 1) {
-		digitalWrite(PIN_EN_X, LOW);
-		digitalWrite(PIN_STEP_X, HIGH);
-		digitalWrite(PIN_STEP_X, LOW);
+	digitalWrite(X_DIR_PIN, LOW);
+	while (digitalRead(X_SW_PIN) == 1) {
+		digitalWrite(X_EN_PIN, LOW);
+		digitalWrite(X_STEP_PIN, HIGH);
+		digitalWrite(X_STEP_PIN, LOW);
 		delayMicroseconds(4000);
 	}
 	// move slowly out of sw
-	digitalWrite(PIN_DIR_X, HIGH);
-	while (digitalRead(PIN_SW_X) == 0) {
-		digitalWrite(PIN_EN_X, LOW);
-		digitalWrite(PIN_STEP_X, HIGH);
-		digitalWrite(PIN_STEP_X, LOW);
+	digitalWrite(X_DIR_PIN, HIGH);
+	while (digitalRead(X_SW_PIN) == 0) {
+		digitalWrite(X_EN_PIN, LOW);
+		digitalWrite(X_STEP_PIN, HIGH);
+		digitalWrite(X_STEP_PIN, LOW);
 		delayMicroseconds(20000);
 	}
 	// move slowly to zero pos
 	int n = 0;
 	for (n = 0; n < 20; n++) {
-		digitalWrite(PIN_EN_X, LOW);
-		digitalWrite(PIN_STEP_X, HIGH);
-		digitalWrite(PIN_STEP_X, LOW);
+		digitalWrite(X_EN_PIN, LOW);
+		digitalWrite(X_STEP_PIN, HIGH);
+		digitalWrite(X_STEP_PIN, LOW);
 		delayMicroseconds(20000);
 	}
 	if (lockX == 0) {
-		digitalWrite(PIN_EN_X, HIGH);
+		digitalWrite(X_EN_PIN, HIGH);
 	}
 	stepperX.setCurrentPosition(0);
 }
@@ -271,36 +293,38 @@ void gotozeroY() {
 	return;
 	part = 0;
 	dorun = 0;
-	digitalWrite(PIN_EN_X, LOW);
+	digitalWrite(X_EN_PIN, LOW);
 	// force move out of sw
-	digitalWrite(PIN_DIR_Y, HIGH);
-	while (digitalRead(PIN_SW_Y) == 0) {
-		digitalWrite(PIN_STEP_Y, HIGH);
-		digitalWrite(PIN_STEP_Y, LOW);
+	digitalWrite(Y_DIR_PIN, HIGH);
+	while (digitalRead(Y_SW_PIN) == 0) {
+		digitalWrite(Y_STEP_PIN, HIGH);
+		digitalWrite(Y_STEP_PIN, LOW);
 		delayMicroseconds(4000);
 	}
 	// move to sw
-	digitalWrite(PIN_DIR_Y, LOW);
-	while (digitalRead(PIN_SW_Y) == 1) {
-		digitalWrite(PIN_STEP_Y, HIGH);
-		digitalWrite(PIN_STEP_Y, LOW);
+	digitalWrite(Y_DIR_PIN, LOW);
+	while (digitalRead(Y_SW_PIN) == 1) {
+		digitalWrite(Y_STEP_PIN, HIGH);
+		digitalWrite(Y_STEP_PIN, LOW);
 		delayMicroseconds(4000);
 	}
 	// move slowly out of sw
-	digitalWrite(PIN_DIR_Y, HIGH);
-	while (digitalRead(PIN_SW_Y) == 0) {
-		digitalWrite(PIN_STEP_Y, HIGH);
-		digitalWrite(PIN_STEP_Y, LOW);
+	digitalWrite(Y_DIR_PIN, HIGH);
+	while (digitalRead(Y_SW_PIN) == 0) {
+		digitalWrite(Y_STEP_PIN, HIGH);
+		digitalWrite(Y_STEP_PIN, LOW);
 		delayMicroseconds(20000);
 	}
 	// move slowly to zero pos
 	int n = 0;
 	for (n = 0; n < 20; n++) {
-		digitalWrite(PIN_STEP_Y, HIGH);
-		digitalWrite(PIN_STEP_Y, LOW);
+		digitalWrite(Y_STEP_PIN, HIGH);
+		digitalWrite(Y_STEP_PIN, LOW);
 		delayMicroseconds(20000);
 	}
+#ifdef Y_STEP_PIN
 	stepperY.setCurrentPosition(0);
+#endif
 }
 
 
@@ -319,7 +343,7 @@ void menuTask( void * parameter ) {
 					// start run
 					if (dorun == 1) {
 						part = 0;
-						digitalWrite(PIN_EN_X, LOW);
+						digitalWrite(X_EN_PIN, LOW);
 						stepperX.moveTo(start_pos + (part * diff));
 						if (start_pos + (part * diff) > end_pos) {
 							dorun = 0;
@@ -329,9 +353,9 @@ void menuTask( void * parameter ) {
 				if (n == 7) {
 					// change lock
 					if (lockX == 1) {
-						digitalWrite(PIN_EN_X, LOW);
+						digitalWrite(X_EN_PIN, LOW);
 					} else {
-						digitalWrite(PIN_EN_X, HIGH);
+						digitalWrite(X_EN_PIN, HIGH);
 					}
 				}
 			}
@@ -351,11 +375,20 @@ void menuTask( void * parameter ) {
 
 void setup() {
 	// serial & bluetooth
-	Serial.begin(115200);
-	Serial.println("welcome to the mXm-Slider");
+	Serial.begin(SERIAL_SPEED);
+	Serial.println("mXm-Slider");
 	SerialBT.begin("mXm-Slider");
 
+
 	// display
+#ifdef DISP_RST_PIN___
+	pinMode(DISP_RST_PIN, OUTPUT);
+	digitalWrite(DISP_RST_PIN, LOW);
+	delay(100);
+	digitalWrite(DISP_RST_PIN, HIGH);
+	delay(100);
+#endif
+	Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 	display.init();
 	display.flipScreenVertically();
 	display.clear();
@@ -365,28 +398,34 @@ void setup() {
 	display.setFont(ArialMT_Plain_16);
 
 	// pins
-	pinMode(PIN_SHUTTER, OUTPUT);
-	digitalWrite(PIN_SHUTTER, LOW);
-	pinMode(PIN_MS1_X, OUTPUT);
-	digitalWrite(PIN_MS1_X, HIGH);
-	pinMode(PIN_MS2_X, OUTPUT);
-	digitalWrite(PIN_MS2_X, LOW);
-	pinMode(PIN_EN_X, OUTPUT);
-	digitalWrite(PIN_EN_X, HIGH);
-	pinMode(PIN_SW_X, INPUT_PULLUP);
+	pinMode(SHUTTER_PIN, OUTPUT);
+	digitalWrite(SHUTTER_PIN, LOW);
+	pinMode(X_MS1_PIN, OUTPUT);
+	digitalWrite(X_MS1_PIN, HIGH);
+	pinMode(X_MS2_PIN, OUTPUT);
+	digitalWrite(X_MS2_PIN, LOW);
+	pinMode(X_EN_PIN, OUTPUT);
+	digitalWrite(X_EN_PIN, HIGH);
+	pinMode(X_SW_PIN, INPUT_PULLUP);
 
 	// encoder
-	attachInterrupt(PIN_ENC_A, isr_encoder, CHANGE);
-	attachInterrupt(PIN_ENC_B, isr_encoder, CHANGE);
-	pinMode(PIN_ENC_SW, INPUT_PULLUP);
+	attachInterrupt(ENC_A_PIN, isr_encoder, CHANGE);
+	attachInterrupt(ENC_B_PIN, isr_encoder, CHANGE);
+	pinMode(ENC_SW_PIN, INPUT_PULLUP);
 
 	// stepper & servo
 	stepperX.setMaxSpeed(set_speedX);
 	stepperX.setAcceleration(set_accelX);
+#ifdef Y_STEP_PIN
 	stepperY.setMaxSpeed(set_speedY);
 	stepperY.setAcceleration(set_accelY);
-	servoZ.attach(PIN_SERVO_Z);
-	servoF.attach(PIN_SERVO_F);
+#endif
+#ifdef Z_SERVO_PIN
+	servoZ.attach(Z_SERVO_PIN);
+#endif
+#ifdef F_SERVO_PIN
+	servoF.attach(F_SERVO_PIN);
+#endif
 
 	xTaskCreatePinnedToCore(
 		menuTask,           /* Task function. */
@@ -415,11 +454,11 @@ void setup() {
 
 void IRAM_ATTR onTimer() {
 	if (menu_n == 10 && menu_s == 1) {
-		digitalWrite(PIN_EN_X, LOW);
+		digitalWrite(X_EN_PIN, LOW);
 		if (set_posX < 0) {
-			digitalWrite(PIN_DIR_X, HIGH);
-			digitalWrite(PIN_STEP_X, HIGH);
-			digitalWrite(PIN_STEP_X, LOW);
+			digitalWrite(X_DIR_PIN, HIGH);
+			digitalWrite(X_STEP_PIN, HIGH);
+			digitalWrite(X_STEP_PIN, LOW);
 			int newpos = stepperX.currentPosition() + 1;
 			stepperX.setCurrentPosition(newpos);
 			stepperX.moveTo(newpos);           
@@ -431,9 +470,9 @@ void IRAM_ATTR onTimer() {
 				encoder.setPosition(set_posX);
 			}
 		} else if (set_posX > 0) {
-			digitalWrite(PIN_DIR_X, LOW);
-			digitalWrite(PIN_STEP_X, HIGH);
-			digitalWrite(PIN_STEP_X, LOW);
+			digitalWrite(X_DIR_PIN, LOW);
+			digitalWrite(X_STEP_PIN, HIGH);
+			digitalWrite(X_STEP_PIN, LOW);
 			int newpos = stepperX.currentPosition() - 1;
 			stepperX.setCurrentPosition(newpos);
 			stepperX.moveTo(newpos);
@@ -457,8 +496,12 @@ void stepperTask( void * parameter ) {
 		if (dozero == 1) {
 			set_posZ = 0;
 			set_posF = 0;
+#ifdef Z_SERVO_PIN
 			servoZ.write(set_posZ);
+#endif
+#ifdef F_SERVO_PIN
 			servoF.write(set_posF);
+#endif
 			gotozeroX();
 			gotozeroY();
 			dorun = 0;
@@ -467,15 +510,15 @@ void stepperTask( void * parameter ) {
 		if (dorun == 1) {
 			if (stepperX.distanceToGo() == 0) {
 				if (lockX == 0) {
-					digitalWrite(PIN_EN_X, HIGH);
+					digitalWrite(X_EN_PIN, HIGH);
 				}
 				delay(sdelay / 2);
-				digitalWrite(PIN_SHUTTER, HIGH);
+				digitalWrite(SHUTTER_PIN, HIGH);
 				delay(100);
-				digitalWrite(PIN_SHUTTER, LOW);
+				digitalWrite(SHUTTER_PIN, LOW);
 				delay(sdelay / 2 - 100);
 				part++;
-				digitalWrite(PIN_EN_X, LOW);
+				digitalWrite(X_EN_PIN, LOW);
 				stepperX.moveTo(start_pos + (part * diff));
 				if (start_pos + (part * diff) > end_pos) {
 					dorun = 0;
@@ -488,7 +531,7 @@ void stepperTask( void * parameter ) {
 				stepperX.run();
 				if (stepperX.distanceToGo() == 0) {
 					if (lockX == 0) {
-						digitalWrite(PIN_EN_X, HIGH);
+						digitalWrite(X_EN_PIN, HIGH);
 					}
 				}
 			}
@@ -499,7 +542,7 @@ void stepperTask( void * parameter ) {
 
 
 void loop() {
-	batt = ((analogRead(PIN_BATT) * 33 * 3.3 / 4096) + batt) / 2;
+	batt = ((analogRead(BATT_PIN) * 33 * 3.3 / 4096) + batt) / 2;
 	// user-interface
 	char c = 0;
 	if (SerialBT.available()) {
