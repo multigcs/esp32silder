@@ -7,7 +7,4 @@ flash:
 	platformio run -v --target upload
 
 monitor:
-	gtkterm --port /dev/ttyUSB0 --speed 115200
-
-
-
+	gtkterm --speed 115200 --port /dev/ttyUSB0 
