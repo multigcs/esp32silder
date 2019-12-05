@@ -2,12 +2,8 @@
 #include <Wire.h>
 #include <RotaryEncoder.h>
 #include <SSD1306Wire.h>
-/*
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-*/
+#include <esp_wifi.h>
+#include <esp_bt.h>
 
 #define X_MAX 4000
 
@@ -29,18 +25,6 @@
 #define PIN_ENC_A 26
 #define PIN_ENC_B 25
 #define PIN_ENC_SW 27
-
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTER_UUID_SETUP "beb5483e-36e1-4688-b7f5-ea07361b2601"
-#define CHARACTER_UUID_DATA  "beb5483e-36e1-4688-b7f5-ea07361b2601"
-#define CHARACTER_UUID_CTRL  "beb5483e-36e1-4688-b7f5-ea07361b2602"
-
-/*
-bool BLEdeviceConnected = false;
-BLECharacteristic *pCharacteristic_setup;
-BLECharacteristic *pCharacteristic_data;
-BLECharacteristic *pCharacteristic_ctrl;
-*/
 
 hw_timer_t * timer = NULL;
 TaskHandle_t xTask1;
@@ -120,34 +104,12 @@ volatile MENU menu[M_LAST] = {
 	{"Zero all Axis", MENU_BOOL, 1, 1, 1, 0, 0, 1},
 };
 
-/*
-class MyServerCallbacks: public BLEServerCallbacks {
-	void onConnect(BLEServer* pServer) {
-		BLEdeviceConnected = true;
-	};
-	void onDisconnect(BLEServer* pServer) {
-		BLEdeviceConnected = false;
-	}
-};
-
-class MyCallbacksSetup: public BLECharacteristicCallbacks {
-	void onWrite(BLECharacteristic *pCharacteristic) {
-//		std::string value = pCharacteristic->getValue();
-	}
-};
-
-class MyCallbacksCtrl: public BLECharacteristicCallbacks {
-	void onWrite(BLECharacteristic *pCharacteristic) {
-//		std::string value = pCharacteristic->getValue();
-		menu[M_RUN].value = 1 - menu[M_RUN].value;
-	}
-};
-*/
-
 void IRAM_ATTR isr_encoder() {
 	encoder.tick();
 }
 
+volatile uint8_t redraw = 1;
+volatile int16_t M_XPOS_last = 0;
 
 void draw_menu() {
 	int n = 0;
@@ -259,7 +221,15 @@ void draw_menu() {
 			display.drawString(70, 40, tmpstr);
 		}
 	}
-	display.display();
+	if (menu_n == M_XPOS && menu_s == 1) {
+		if (redraw == 1) {
+			display.display();
+			redraw = 0;
+		}
+	} else {
+		display.display();
+	}
+
 }
 
 
@@ -339,6 +309,12 @@ void IRAM_ATTR onTimer() {
 				encoder.setPosition(menu[M_XPOS].value);
 			}
 		}
+		if (M_XPOS_last != menu[M_XPOS].value) {
+			redraw = 1;
+			M_XPOS_last = menu[M_XPOS].value;
+		}
+		  
+
 	} else if (menu[M_RUN].value == 1) {
 			if (stage == STAGE_GOTO) {
 				if (position < gotopos) {
@@ -381,34 +357,8 @@ void setup() {
 	Serial.begin(115200);
 	Serial.println("welcome to the mXm-Slider");
 
-
-/*
-	// bluetooth
-	BLEDevice::init("mXm-Slider");
-	BLEServer *pServer = BLEDevice::createServer();
-	pServer->setCallbacks(new MyServerCallbacks());
-	BLEService *pService = pServer->createService(SERVICE_UUID);
-
-	pCharacteristic_setup = pService->createCharacteristic(CHARACTER_UUID_SETUP, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_INDICATE | BLECharacteristic::PROPERTY_NOTIFY);
-	pCharacteristic_setup->addDescriptor(new BLE2902());
-	pCharacteristic_setup->setCallbacks(new MyCallbacksSetup());
-
-	pCharacteristic_data = pService->createCharacteristic(CHARACTER_UUID_DATA, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_INDICATE | BLECharacteristic::PROPERTY_NOTIFY);
-	pCharacteristic_data->addDescriptor(new BLE2902());
-
-	pCharacteristic_ctrl = pService->createCharacteristic(CHARACTER_UUID_CTRL, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_INDICATE | BLECharacteristic::PROPERTY_NOTIFY);
-	pCharacteristic_ctrl->addDescriptor(new BLE2902());
-	pCharacteristic_ctrl->setCallbacks(new MyCallbacksCtrl());
-
-	pService->start();
-
-	uint8_t value[1];
-	value[0] = 0;
-	pCharacteristic_setup->setValue(value, 0);
-	pCharacteristic_data->setValue(value, 0);
-	pCharacteristic_ctrl->setValue(value, 0);
-	pServer->getAdvertising()->start();
-*/
+	//esp_wifi_stop();
+	esp_bt_controller_disable();
 
 	// display
 	display.init();
@@ -439,7 +389,6 @@ void setup() {
 	attachInterrupt(PIN_ENC_B, isr_encoder, CHANGE);
 	pinMode(PIN_ENC_SW, INPUT_PULLUP);
 
-
 	timer = timerBegin(0, 80, true);
 	timerAttachInterrupt(timer, &onTimer, true);
 	timerAlarmWrite(timer, 1000, true);
@@ -449,8 +398,6 @@ void setup() {
 
 
 void loop() {
-
-
 	static int mn = 0;
 	batt = ((analogRead(PIN_BATT) * 33 * 3.3 / 4096) + batt) / 2;
 	draw_menu();
@@ -488,21 +435,6 @@ void loop() {
 		gotozeroX();
 		menu[M_ZERO].value = 0;
 	}
-/*
-	static int nn = 0;
-	nn++;
-	if (nn >= 50) {
-		nn = 0;
-		mn++;
-		if (mn >= M_LAST) {
-			mn = 0;
-		}
-		sprintf(tmp_str, "%i;%i;%i;%s;%i", mn, M_LAST, menu[mn].type, menu[mn].text, menu[mn].value);
-		pCharacteristic_setup->setValue((uint8_t *)tmp_str, strlen(tmp_str));
-		pCharacteristic_setup->notify();
-		Serial.println(tmp_str);
-	}
-*/
 }
 
 
